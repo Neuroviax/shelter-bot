@@ -45,3 +45,9 @@ bot.on('location', (ctx) => {
 
 bot.start((ctx) => ctx.reply('Привет! Отправьте мне свою локацию 📍, и я покажу ближайшее убежище.'));
 bot.launch();
+import express from 'express';
+const app = express();
+app.get('/', (req, res) => res.send('Бот работает!'));
+app.listen(process.env.PORT || 3000, () => {
+  console.log('Фальшивый сервер запущен');
+});
