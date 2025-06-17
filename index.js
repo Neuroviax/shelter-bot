@@ -22,6 +22,7 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 let shelters = [];
 
+// Загрузка CSV-файла один раз при запуске
 fs.createReadStream('Убежища_Ришон.csv', { encoding: 'utf8' })
   .pipe(csv({ separator: ',' }))
   .on('data', (data) => {
@@ -36,7 +37,7 @@ fs.createReadStream('Убежища_Ришон.csv', { encoding: 'utf8' })
     console.log('Список убежищ загружен');
   });
 
-// Расчёт расстояния между двумя точками
+// Расчёт расстояния по формуле гаверсинуса
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // радиус Земли в км
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -50,72 +51,41 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Команда /start
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    'Привет! Отправьте мне свою геолокацию 📍, и я покажу ближайшее укрытие в Ришоне.'
+    'Привет! Отправьте мне свою геолокацию 📍, и я покажу три ближайших укрытия в Ришоне.'
   );
 });
 
-bot.on('location', async (msg) => {
+// Обработка геолокации
+bot.on('location', (msg) => {
   const { latitude, longitude } = msg.location;
 
-  const shelters = []; // сюда загрузятся данные из CSV, как раньше
-  const csv = fs.createReadStream('shelters.csv').pipe(csvParser());
+  const sorted = shelters
+    .map((shelter) => {
+      const distance = getDistance(latitude, longitude, shelter.lat, shelter.lng);
+      return { ...shelter, distance };
+    })
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 3);
 
-  for await (const row of csv) {
-    const lat = parseFloat(row.latitude);
-    const lng = parseFloat(row.longitude);
-    const distance = Math.sqrt(Math.pow(lat - latitude, 2) + Math.pow(lng - longitude, 2));
-
-    shelters.push({
-      name: row.name || 'Укрытие',
-      address: row.address || 'Адрес не указан',
-      lat,
-      lng,
-      distance
-    });
-  }
-
-  // Сортировка по расстоянию
-  shelters.sort((a, b) => a.distance - b.distance);
-  const top3 = shelters.slice(0, 3);
-
-  if (top3.length === 0) {
+  if (sorted.length === 0) {
     return bot.sendMessage(msg.chat.id, 'Укрытий поблизости не найдено.');
   }
 
-  // Генерация ссылки на Google Maps с несколькими точками
-  const mapLink = `https://www.google.com/maps/dir/${latitude},${longitude}/${top3.map(s => `${s.lat},${s.lng}`).join('/')}`;
+  const mapLink = `https://www.google.com/maps/dir/${latitude},${longitude}/${sorted.map(s => `${s.lat},${s.lng}`).join('/')}`;
 
   let message = '🏃‍♀️ Вот ближайшие укрытия:\n\n';
-  top3.forEach((shelter, index) => {
-    message += `📍 ${index + 1}. ${shelter.name}\n${shelter.address}\n\n`;
+  sorted.forEach((s, i) => {
+    const dist = s.distance < 1
+      ? `${Math.round(s.distance * 1000)} м`
+      : `${s.distance.toFixed(1)} км`;
+    message += `📍 ${i + 1}. ${s.name}\n${s.address}\n📏 Расстояние: ${dist}\n\n`;
   });
+
   message += `🗺️ Открыть на карте: ${mapLink}`;
 
   bot.sendMessage(msg.chat.id, message);
-});
-
-
-  if (nearest) {
-    const distStr = minDistance < 1
-      ? `${Math.round(minDistance * 1000)} м`
-      : `${minDistance.toFixed(1)} км`;
-
-    bot.sendMessage(
-      msg.chat.id,
-      `🏃 Ближайшее укрытие находится в ${distStr} от вас:`
-    );
-
-    bot.sendVenue(
-      msg.chat.id,
-      nearest.lat,
-      nearest.lng,
-      nearest.name,
-      nearest.address
-    );
-  } else {
-    bot.sendMessage(msg.chat.id, 'Увы, поблизости не найдено укрытий 😔');
-  }
 });
