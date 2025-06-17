@@ -4,8 +4,13 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import csv from 'csv-parser';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -22,7 +27,6 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 let shelters = [];
 
-// Загрузка CSV-файла один раз при запуске
 fs.createReadStream('Убежища_Ришон.csv', { encoding: 'utf8' })
   .pipe(csv({ separator: ',' }))
   .on('data', (data) => {
@@ -37,9 +41,8 @@ fs.createReadStream('Убежища_Ришон.csv', { encoding: 'utf8' })
     console.log('Список убежищ загружен');
   });
 
-// Расчёт расстояния по формуле гаверсинуса
 function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // радиус Земли в км
+  const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a =
@@ -51,12 +54,8 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// Команда /start
-import path from 'path';
-
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-
   const imagePath = path.join(__dirname, 'ChatGPT Image 17 июн. 2025 г., 20_06_34.png');
 
   await bot.sendPhoto(chatId, imagePath, {
@@ -71,8 +70,6 @@ bot.onText(/\/start/, async (msg) => {
   });
 });
 
-
-// Обработка геолокации
 bot.on('location', (msg) => {
   const { latitude, longitude } = msg.location;
 
