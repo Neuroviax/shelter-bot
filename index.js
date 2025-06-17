@@ -1,70 +1,50 @@
-import { Telegraf } from 'telegraf';
-import dotenv from 'dotenv';
+import TelegramBot from 'node-telegram-bot-api';
+import express from 'express';
 import fetch from 'node-fetch';
+import dotenv from 'dotenv';
 
 dotenv.config();
-const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// Тестовая база убежищ (широта, долгота и адрес)
-const shelters = [
-  { lat: 31.963, lon: 34.803, address: 'ул. Герцль 23, Ришон-ле-Цион' },
-  { lat: 31.973, lon: 34.782, address: 'ул. Бялик 102, Ришон-ле-Цион' },
-  { lat: 31.968, lon: 34.790, address: 'ул. Йосефталь 5, Ришон-ле-Цион' }
-];
-
-// Функция рассчета расстояния
-function distance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Радиус Земли в км
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// При получении локации
-bot.on('location', (ctx) => {
-  const userLat = ctx.message.location.latitude;
-  const userLon = ctx.message.location.longitude;
-
-  let nearest = shelters[0];
-  let minDistance = distance(userLat, userLon, nearest.lat, nearest.lon);
-
-  for (const shelter of shelters) {
-    const dist = distance(userLat, userLon, shelter.lat, shelter.lon);
-    if (dist < minDistance) {
-      nearest = shelter;
-      minDistance = dist;
-    }
-  }
-
-  ctx.reply(`Ближайшее убежище:\n📍 ${nearest.address}\n📏 Расстояние: ${minDistance.toFixed(2)} км`);
-});
-
-bot.start((ctx) => ctx.reply('Привет! Отправьте мне свою локацию 📍, и я покажу ближайшее убежище.'));
-bot.launch();
-import express from 'express';
 const app = express();
-app.get('/', (req, res) => res.send('Бот работает!'));
-app.listen(process.env.PORT || 3000, () => {
-  console.log('Фальшивый сервер запущен');
+const port = process.env.PORT || 10000;
+
+// Для Render: простой HTTP-сервер, чтобы бот не засыпал
+app.get('/', (req, res) => {
+  res.send('Bot is alive!');
 });
-// Обработка полученной геолокации от пользователя
-bot.on('location', (msg) => {
-  const location = msg.location;
-  if (!location) {
-    bot.sendMessage(msg.chat.id, 'Не удалось получить координаты 😕');
+
+app.listen(port, () => {
+  console.log(`Web server is running on port ${port}`);
+});
+
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    'Привет! Отправьте мне свою локацию 📍, и я покажу ближайшее убежище.'
+  );
+});
+
+bot.on('location', async (msg) => {
+  const { latitude, longitude } = msg.location;
+  const response = await fetch(
+    `https://gdeubezhishe.kz/api/shelters?lat=${latitude}&lng=${longitude}`
+  );
+  const shelters = await response.json();
+
+  if (shelters.length === 0) {
+    bot.sendMessage(msg.chat.id, 'Упс! Укрытий поблизости не найдено.');
     return;
   }
 
-  const latitude = location.latitude;
-  const longitude = location.longitude;
+  const nearest = shelters[0];
 
-  // Здесь в будущем будет логика поиска убежищ
-  bot.sendMessage(
+  bot.sendVenue(
     msg.chat.id,
-    `📍 Ты находишься по координатам:\nШирота: ${latitude}\nДолгота: ${longitude}\n\nЯ ищу ближайшее убежище... 🛡️`
+    nearest.lat,
+    nearest.lng,
+    nearest.name || 'Ближайшее укрытие',
+    nearest.address || 'Адрес не указан'
   );
 });
