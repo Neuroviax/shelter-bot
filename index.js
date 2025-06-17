@@ -57,24 +57,46 @@ bot.onText(/\/start/, (msg) => {
   );
 });
 
-bot.on('location', (msg) => {
+bot.on('location', async (msg) => {
   const { latitude, longitude } = msg.location;
 
-  if (!shelters.length) {
-    bot.sendMessage(msg.chat.id, 'Извините, данные об убежищах ещё загружаются. Попробуйте позже.');
-    return;
+  const shelters = []; // сюда загрузятся данные из CSV, как раньше
+  const csv = fs.createReadStream('shelters.csv').pipe(csvParser());
+
+  for await (const row of csv) {
+    const lat = parseFloat(row.latitude);
+    const lng = parseFloat(row.longitude);
+    const distance = Math.sqrt(Math.pow(lat - latitude, 2) + Math.pow(lng - longitude, 2));
+
+    shelters.push({
+      name: row.name || 'Укрытие',
+      address: row.address || 'Адрес не указан',
+      lat,
+      lng,
+      distance
+    });
   }
 
-  let nearest = null;
-  let minDistance = Infinity;
+  // Сортировка по расстоянию
+  shelters.sort((a, b) => a.distance - b.distance);
+  const top3 = shelters.slice(0, 3);
 
-  shelters.forEach((shelter) => {
-    const dist = getDistance(latitude, longitude, shelter.lat, shelter.lng);
-    if (dist < minDistance) {
-      minDistance = dist;
-      nearest = shelter;
-    }
+  if (top3.length === 0) {
+    return bot.sendMessage(msg.chat.id, 'Укрытий поблизости не найдено.');
+  }
+
+  // Генерация ссылки на Google Maps с несколькими точками
+  const mapLink = `https://www.google.com/maps/dir/${latitude},${longitude}/${top3.map(s => `${s.lat},${s.lng}`).join('/')}`;
+
+  let message = '🏃‍♀️ Вот ближайшие укрытия:\n\n';
+  top3.forEach((shelter, index) => {
+    message += `📍 ${index + 1}. ${shelter.name}\n${shelter.address}\n\n`;
   });
+  message += `🗺️ Открыть на карте: ${mapLink}`;
+
+  bot.sendMessage(msg.chat.id, message);
+});
+
 
   if (nearest) {
     const distStr = minDistance < 1
