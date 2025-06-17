@@ -1,16 +1,16 @@
 {
   "name": "shelter-bot",
   "version": "1.0.0",
-  "description": "Telegram bot to find shelters nearby",
+  "description": "Telegram bot for finding nearby shelters",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "node-fetch": "^3.3.2",
     "express": "^4.18.2",
-    "telegraf": "^4.12.2"
-  },
-  "type": "module"
+    "dotenv": "^16.0.3",
+    "node-fetch": "^3.3.2",
+    "node-telegram-bot-api": "^0.61.0"
+  }
 }
