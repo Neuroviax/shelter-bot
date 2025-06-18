@@ -5,12 +5,8 @@ import fs from 'fs';
 import csv from 'csv-parser';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -27,6 +23,7 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 let shelters = [];
 
+// Загрузка CSV-файла один раз при запуске
 fs.createReadStream('Убежища_Ришон.csv', { encoding: 'utf8' })
   .pipe(csv({ separator: ',' }))
   .on('data', (data) => {
@@ -41,6 +38,7 @@ fs.createReadStream('Убежища_Ришон.csv', { encoding: 'utf8' })
     console.log('Список убежищ загружен');
   });
 
+// Расчёт расстояния по формуле гаверсинуса
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -54,24 +52,71 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Хранение выбранного языка
+const userLangMap = new Map();
+
+// Команда /start
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
+  const userLang = msg.from.language_code || 'ru';
+
+  if (!userLangMap.has(chatId)) {
+    userLangMap.set(chatId, userLang);
+  }
+
+  const options = {
+    reply_markup: {
+      keyboard: [['🇷🇺 Русский', '🇮🇱 עברית']],
+      one_time_keyboard: true,
+      resize_keyboard: true
+    }
+  };
+
   const imagePath = path.join(__dirname, 'ChatGPT Image 17 июн. 2025 г., 20_06_34.png');
 
-  await bot.sendPhoto(chatId, imagePath, {
-    caption: `👋 Привет! Я бот, который поможет найти ближайшее убежище 🛡 в Ришоне.
+  const captionRu = `👋 Привет! Я бот, который поможет найти ближайшее убежище 🛡 в Ришоне.
 
 📍 Просто отправь свою геолокацию — и я покажу тебе 3 ближайших укрытия с адресами и картой.
 
 🔄 Данные регулярно обновляются. Бот работает автономно и доступен 24/7.
 
-⚠️ Обратите внимание: информация предоставляется в справочных целях. Перед походом в укрытие убедитесь в его доступности на месте.`,
+⚠️ Обратите внимание: информация предоставляется в справочных целях. Перед походом в укрытие убедитесь в его доступности на месте.`;
+
+  const captionHe = `👋 שלום! אני בוט שיעזור לך למצוא את המקלט הקרוב ביותר 🛡 בראשון לציון.
+
+📍 שלחו לי את המיקום שלכם – ואחזיר את שלושת המקלטים הקרובים ביותר עם כתובות ומפה.
+
+🔄 הנתונים מתעדכנים באופן שוטף. הבוט פועל אוטונומית וזמין 24/7.
+
+⚠️ שימו לב: המידע הוא לצורכי מידע בלבד. ודאו בשטח שהמקלט פתוח ונגיש.`;
+
+  await bot.sendPhoto(chatId, imagePath, {
+    caption: userLang === 'he' ? captionHe : captionRu,
     parse_mode: 'HTML'
   });
+
+  bot.sendMessage(chatId, userLang === 'he' ? 'בחר/י שפה:' : 'Выберите язык:', options);
 });
 
+// Обработка выбора языка
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  if (text === '🇷🇺 Русский') {
+    userLangMap.set(chatId, 'ru');
+    bot.sendMessage(chatId, 'Язык установлен: русский 🇷🇺');
+  } else if (text === '🇮🇱 עברית') {
+    userLangMap.set(chatId, 'he');
+    bot.sendMessage(chatId, 'השפה נקבעה לעברית 🇮🇱');
+  }
+});
+
+// Обработка геолокации
 bot.on('location', (msg) => {
   const { latitude, longitude } = msg.location;
+  const chatId = msg.chat.id;
+  const lang = userLangMap.get(chatId) || 'ru';
 
   const sorted = shelters
     .map((shelter) => {
@@ -82,20 +127,41 @@ bot.on('location', (msg) => {
     .slice(0, 3);
 
   if (sorted.length === 0) {
-    return bot.sendMessage(msg.chat.id, 'Укрытий поблизости не найдено.');
+    return bot.sendMessage(chatId, lang === 'he' ? 'לא נמצאו מקלטים בסביבה.' : 'Укрытий поблизости не найдено.');
   }
 
   const mapLink = `https://www.google.com/maps/dir/${latitude},${longitude}/${sorted.map(s => `${s.lat},${s.lng}`).join('/')}`;
 
-  let message = '🏃‍♀️ Вот ближайшие укрытия:\n\n';
+  let message = lang === 'he' ? '🏃‍♀️ המקלטים הקרובים ביותר:
+
+' : '🏃‍♀️ Вот ближайшие укрытия:
+
+';
   sorted.forEach((s, i) => {
     const dist = s.distance < 1
       ? `${Math.round(s.distance * 1000)} м`
       : `${s.distance.toFixed(1)} км`;
-    message += `📍 ${i + 1}. ${s.name}\n${s.address}\n📏 Расстояние: ${dist}\n\n`;
+
+    const distHe = s.distance < 1
+      ? `${Math.round(s.distance * 1000)} מ׳`
+      : `${s.distance.toFixed(1)} ק"מ`;
+
+    message += lang === 'he'
+      ? `📍 ${i + 1}. ${s.name}
+${s.address}
+📏 מרחק: ${distHe}
+
+`
+      : `📍 ${i + 1}. ${s.name}
+${s.address}
+📏 Расстояние: ${dist}
+
+`;
   });
 
-  message += `🗺️ Открыть на карте: ${mapLink}`;
+  message += lang === 'he'
+    ? `🗺️ לצפייה במפה: ${mapLink}`
+    : `🗺️ Открыть на карте: ${mapLink}`;
 
-  bot.sendMessage(msg.chat.id, message);
+  bot.sendMessage(chatId, message);
 });
